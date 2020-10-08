@@ -215,8 +215,8 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
      * publication.
      */
 
-    volatile Object result;       // Either the result or boxed AltResult
-    volatile Completion stack;    // Top of Treiber stack of dependent actions
+    volatile Object result;       // Either the result or boxed AltResult 要么是结果。要么是包装过的AltResult
+    volatile Completion stack;    // Top of Treiber stack of dependent actions // 依赖操作栈的栈顶 todo不知道干嘛的
 
     final boolean internalComplete(Object r) { // CAS from null to r
         return UNSAFE.compareAndSwapObject(this, RESULT, null, r);
@@ -229,7 +229,7 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
     /** Returns true if successfully pushed c onto stack. */
     final boolean tryPushStack(Completion c) {
         Completion h = stack;
-        lazySetNext(c, h);
+        lazySetNext(c, h); //将当前stack设置为c的next
         return UNSAFE.compareAndSwapObject(this, STACK, h, c);
     }
 
@@ -409,7 +409,7 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
      * Null-checks user executor argument, and translates uses of
      * commonPool to asyncPool in case parallelism disabled.
      */
-    static Executor screenExecutor(Executor e) {
+    static Executor screenExecutor(Executor e) {//判断输入的线程池是否使用
         if (!useCommonPool && e == ForkJoinPool.commonPool())
             return asyncPool;
         if (e == null) throw new NullPointerException();
@@ -431,7 +431,7 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
         /**
          * Performs completion action if triggered, returning a
          * dependent that may need propagation, if one exists.
-         *
+         * 如果被触发，调用完成动作。
          * @param mode SYNC, ASYNC, or NESTED
          */
         abstract CompletableFuture<?> tryFire(int mode);
@@ -439,7 +439,7 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
         /** Returns true if possibly still triggerable. Used by cleanStack. */
         abstract boolean isLive();
 
-        public final void run()                { tryFire(ASYNC); }
+        public final void run()                { tryFire(ASYNC); }//触发后续的调用
         public final boolean exec()            { tryFire(ASYNC); return true; }
         public final Void getRawResult()       { return null; }
         public final void setRawResult(Void v) {}
@@ -460,18 +460,18 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
          * pushing others to avoid unbounded recursion.
          */
         CompletableFuture<?> f = this; Completion h;
-        while ((h = f.stack) != null ||
-               (f != this && (h = (f = this).stack) != null)) {
+        while ((h = f.stack) != null ||//当前栈不为空
+               (f != this && (h = (f = this).stack) != null)) {//
             CompletableFuture<?> d; Completion t;
-            if (f.casStack(h, t = h.next)) {
-                if (t != null) {
+            if (f.casStack(h, t = h.next)) {//移动指针到下一个
+                if (t != null) {//如果下一个不为空
                     if (f != this) {
-                        pushStack(h);
+                        pushStack(h);//如果f不是this，将刚出栈的h入this的栈顶
                         continue;
                     }
-                    h.next = null;    // detach
+                    h.next = null;    // detach  帮助gc
                 }
-                f = (d = h.tryFire(NESTED)) == null ? this : d;
+                f = (d = h.tryFire(NESTED)) == null ? this : d; //调用tryFire
             }
         }
     }
@@ -1619,17 +1619,17 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
 
         public void run() {
             CompletableFuture<Void> d; Runnable f;
-            if ((d = dep) != null && (f = fn) != null) {
-                dep = null; fn = null;
-                if (d.result == null) {
+            if ((d = dep) != null && (f = fn) != null) {//首先判断参数都不是空的
+                dep = null; fn = null;//帮助gc回收？？todo 不确定
+                if (d.result == null) {//如果结果不存在
                     try {
-                        f.run();
-                        d.completeNull();
+                        f.run();// 执行 Runnable 的run方法
+                        d.completeNull();//设置为 new AltResult(null) 如果完成的话
                     } catch (Throwable ex) {
-                        d.completeThrowable(ex);
+                        d.completeThrowable(ex);//设置为 new AltResult(new Exception())
                     }
                 }
-                d.postComplete();
+                d.postComplete();//处理完成事件
             }
         }
     }
@@ -1637,7 +1637,7 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
     static CompletableFuture<Void> asyncRunStage(Executor e, Runnable f) {
         if (f == null) throw new NullPointerException();
         CompletableFuture<Void> d = new CompletableFuture<Void>();
-        e.execute(new AsyncRun(d, f));
+        e.execute(new AsyncRun(d, f));//利用给定的线程池执行任务，并且将任务封装成 AsyncRun
         return d;
     }
 
@@ -2369,13 +2369,13 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
     private static final long RESULT;
     private static final long STACK;
     private static final long NEXT;
-    static {
+    static {//用于CAS比较用
         try {
             final sun.misc.Unsafe u;
             UNSAFE = u = sun.misc.Unsafe.getUnsafe();
             Class<?> k = CompletableFuture.class;
-            RESULT = u.objectFieldOffset(k.getDeclaredField("result"));
-            STACK = u.objectFieldOffset(k.getDeclaredField("stack"));
+            RESULT = u.objectFieldOffset(k.getDeclaredField("result"));//获取 result 的偏移
+            STACK = u.objectFieldOffset(k.getDeclaredField("stack"));//获取 stack 的偏移
             NEXT = u.objectFieldOffset
                 (Completion.class.getDeclaredField("next"));
         } catch (Exception x) {
