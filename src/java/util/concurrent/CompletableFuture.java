@@ -229,13 +229,13 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
     /** Returns true if successfully pushed c onto stack. */
     final boolean tryPushStack(Completion c) {
         Completion h = stack;
-        lazySetNext(c, h); //将当前stack设置为c的next
-        return UNSAFE.compareAndSwapObject(this, STACK, h, c);
+        lazySetNext(c, h); //将c.next 设置为stack
+        return UNSAFE.compareAndSwapObject(this, STACK, h, c);//把this 的 stack 设置成 c todo c和h不都是stack么?
     }
 
     /** Unconditionally pushes c onto stack, retrying if necessary. */
     final void pushStack(Completion c) {
-        do {} while (!tryPushStack(c));
+        do {} while (!tryPushStack(c));//尝试
     }
 
     /* ------------- Encoding and decoding outcomes -------------- */
@@ -446,12 +446,12 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
     }
 
     static void lazySetNext(Completion c, Completion next) {
-        UNSAFE.putOrderedObject(c, NEXT, next);
+        UNSAFE.putOrderedObject(c, NEXT, next);// 把c的 NEXT 位置的对象修改为 next https://blog.csdn.net/jfengamarsoft/article/details/72195585
     }
 
     /**
      * Pops and tries to trigger all reachable dependents.  Call only
-     * when known to be done.
+     * when known to be done.  很重要的一个方法。会触发之后的操作。1.如果没有后续链路 2. 如果有一个后续操作 3.有很多操作等..
      */
     final void postComplete() {
         /*
@@ -460,18 +460,18 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
          * pushing others to avoid unbounded recursion.
          */
         CompletableFuture<?> f = this; Completion h;
-        while ((h = f.stack) != null ||//当前栈不为空
-               (f != this && (h = (f = this).stack) != null)) {//
+        while ((h = f.stack) != null ||//1.当前栈不为空, 说明有后续操作。比如 thenXXX，如果为空，直接跳过
+               (f != this && (h = (f = this).stack) != null)) { // todo 暂时跳过
             CompletableFuture<?> d; Completion t;
-            if (f.casStack(h, t = h.next)) {//移动指针到下一个
-                if (t != null) {//如果下一个不为空
-                    if (f != this) {
-                        pushStack(h);//如果f不是this，将刚出栈的h入this的栈顶
+            if (f.casStack(h, t = h.next)) {//将当前 f中的future的stack指向其下一个操作，通过 java.util.concurrent.CompletableFuture.UNSAFE
+                if (t != null) { //如果stack 的下一个还有内容。即future
+                    if (f != this) { // todo 不知道这里是干嘛的。防止循环么?
+                        pushStack(h); //修改stack值 todo 还没太懂
                         continue;
                     }
                     h.next = null;    // detach  帮助gc
                 }
-                f = (d = h.tryFire(NESTED)) == null ? this : d; //调用tryFire
+                f = (d = h.tryFire(NESTED)) == null ? this : d; //执行后续的then的逻辑，调用tryFire
             }
         }
     }
@@ -506,8 +506,8 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
     @SuppressWarnings("serial")
     abstract static class UniCompletion<T,V> extends Completion {
         Executor executor;                 // executor to use (null if none)
-        CompletableFuture<V> dep;          // the dependent to complete
-        CompletableFuture<T> src;          // source for action
+        CompletableFuture<V> dep;          // the dependent to complete 依赖原始操作完成之后的操作
+        CompletableFuture<T> src;          // source for action 原始的操作
 
         UniCompletion(Executor executor, CompletableFuture<V> dep,
                       CompletableFuture<T> src) {
@@ -520,7 +520,7 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
          * thread claims ownership.  If async, starts as task -- a
          * later call to tryFire will run action.
          */
-        final boolean claim() {
+        final boolean claim() {//保证只被执行一次
             Executor e = executor;
             if (compareAndSetForkJoinTaskTag((short)0, (short)1)) {
                 if (e == null)
@@ -537,8 +537,8 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
     /** Pushes the given completion (if it exists) unless done. */
     final void push(UniCompletion<?,?> c) {
         if (c != null) {
-            while (result == null && !tryPushStack(c))
-                lazySetNext(c, null); // clear on failure
+            while (result == null && !tryPushStack(c)) // 如果还没完成，那么把c.next设置成当前的stack,并且把c设置到stack的顶部，即链表头部插入一个节点。
+                lazySetNext(c, null); // clear on failure 如果失败把c的next设置为null
         }
     }
 
@@ -629,20 +629,20 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
         final CompletableFuture<Void> tryFire(int mode) {
             CompletableFuture<Void> d; CompletableFuture<T> a;
             if ((d = dep) == null ||
-                !d.uniAccept(a = src, fn, mode > 0 ? null : this))
+                !d.uniAccept(a = src, fn, mode > 0 ? null : this))// 如果src还没结果。直接返回null,如果src已经有返回值。就会执行fn
                 return null;
-            dep = null; src = null; fn = null;
-            return d.postFire(a, mode);
+            dep = null; src = null; fn = null;// 如果src已经执行完了。那么就触发d.postFire(a, mode)
+            return d.postFire(a, mode);//TODO 应该是触发下面一个操作的
         }
     }
 
     final <S> boolean uniAccept(CompletableFuture<S> a,
                                 Consumer<? super S> f, UniAccept<S> c) {
         Object r; Throwable x;
-        if (a == null || (r = a.result) == null || f == null)
+        if (a == null || (r = a.result) == null || f == null)//如果依赖的a阶段, 或者a还未完成,或者消费方法没有，直接返回false
             return false;
         tryComplete: if (result == null) {
-            if (r instanceof AltResult) {
+            if (r instanceof AltResult) {//如果是 AltResult,要么是异常了，要么是返回void
                 if ((x = ((AltResult)r).ex) != null) {
                     completeThrowable(x, r);
                     break tryComplete;
@@ -653,7 +653,7 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
                 if (c != null && !c.claim())
                     return false;
                 @SuppressWarnings("unchecked") S s = (S) r;
-                f.accept(s);
+                f.accept(s);//执行方法
                 completeNull();
             } catch (Throwable ex) {
                 completeThrowable(ex);
@@ -665,8 +665,8 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
     private CompletableFuture<Void> uniAcceptStage(Executor e,
                                                    Consumer<? super T> f) {
         if (f == null) throw new NullPointerException();
-        CompletableFuture<Void> d = new CompletableFuture<Void>();
-        if (e != null || !d.uniAccept(this, f, null)) {
+        CompletableFuture<Void> d = new CompletableFuture<Void>();//创建一个future
+        if (e != null || !d.uniAccept(this, f, null)) { //线程池不为null || 检查f是否已经完成
             UniAccept<T> c = new UniAccept<T>(e, d, this, f);
             push(c);
             c.tryFire(SYNC);
@@ -1583,16 +1583,16 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
 
         public void run() {
             CompletableFuture<T> d; Supplier<T> f;
-            if ((d = dep) != null && (f = fn) != null) {
-                dep = null; fn = null;
-                if (d.result == null) {
+            if ((d = dep) != null && (f = fn) != null) {// 如果 future 和 执行的逻辑不为null
+                dep = null; fn = null;//帮助gc
+                if (d.result == null) {//并且还没有执行。todo,一般都是null，不知道什么情况!=null。不知道什么情况下会并发
                     try {
-                        d.completeValue(f.get());
+                        d.completeValue(f.get());//调用 执行逻辑。并且把结果放到future中
                     } catch (Throwable ex) {
-                        d.completeThrowable(ex);
+                        d.completeThrowable(ex);//如果异常。封装成错误
                     }
                 }
-                d.postComplete();
+                d.postComplete();// 进行后置处理
             }
         }
     }
@@ -1600,7 +1600,7 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
     static <U> CompletableFuture<U> asyncSupplyStage(Executor e,
                                                      Supplier<U> f) {
         if (f == null) throw new NullPointerException();
-        CompletableFuture<U> d = new CompletableFuture<U>();
+        CompletableFuture<U> d = new CompletableFuture<U>();// 创建一个 Future
         e.execute(new AsyncSupply<U>(d, f));
         return d;
     }
