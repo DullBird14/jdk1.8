@@ -249,7 +249,7 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
     static final AltResult NIL = new AltResult(null);
 
     /** Completes with the null value, unless already completed. */
-    final boolean completeNull() {
+    final boolean completeNull() {// 只有当result是null的时候才能设置。而且只能设置一次
         return UNSAFE.compareAndSwapObject(this, RESULT, null,
                                            NIL);
     }
@@ -260,7 +260,7 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
     }
 
     /** Completes with a non-exceptional result, unless already completed. */
-    final boolean completeValue(T t) {
+    final boolean completeValue(T t) {// 只有当result是null的时候才能设置。而且只能设置一次
         return UNSAFE.compareAndSwapObject(this, RESULT, null,
                                            (t == null) ? NIL : t);
     }
@@ -275,7 +275,7 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
     }
 
     /** Completes with an exceptional result, unless already completed. */
-    final boolean completeThrowable(Throwable x) {
+    final boolean completeThrowable(Throwable x) {// 只有当result是null的时候才能设置。而且只能设置一次
         return UNSAFE.compareAndSwapObject(this, RESULT, null,
                                            encodeThrowable(x));
     }
@@ -303,7 +303,7 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
      * equivalent, i.e. if this is a simple propagation of an
      * existing CompletionException.
      */
-    final boolean completeThrowable(Throwable x, Object r) {
+    final boolean completeThrowable(Throwable x, Object r) {// 只有当result是null的时候才能设置。而且只能设置一次
         return UNSAFE.compareAndSwapObject(this, RESULT, null,
                                            encodeThrowable(x, r));
     }
@@ -1305,7 +1305,7 @@ public class CompletableFuture<T> implements Future<T>, CompletionStage<T> {
                       andTree(cfs, mid+1, hi)))  == null)//cfs中不能有null
                 throw new NullPointerException();// todo 好像是分治的思想。归并左边和右边，得到2个future
             if (!d.biRelay(a, b)) {//归并完成之后 判断a和b 是否抛出异常
-                BiRelay<?,?> c = new BiRelay<>(d, a, b);//先执行a, 然后判断b
+                BiRelay<?,?> c = new BiRelay<>(d, a, b);//先判断a, 然后判断b
                 a.bipush(b, c);// todo 构建链表，具体怎么构建不是那么清楚
                 c.tryFire(SYNC);
             }

@@ -255,20 +255,20 @@ public class FutureTask<V> implements RunnableFuture<V> {
     public void run() {
         if (state != NEW ||
             !UNSAFE.compareAndSwapObject(this, runnerOffset,
-                                         null, Thread.currentThread()))
+                                         null, Thread.currentThread()))//如果当前的状态不为新创建 或者 设置 线程的时候失败(即通常已经被别的线程执行)
             return;
         try {
-            Callable<V> c = callable;
+            Callable<V> c = callable;// callable 就是传入的任务
             if (c != null && state == NEW) {
                 V result;
                 boolean ran;
                 try {
-                    result = c.call();
+                    result = c.call(); //执行任务
                     ran = true;
-                } catch (Throwable ex) {
+                } catch (Throwable ex) {// 如果任务失败, 就catch异常。
                     result = null;
                     ran = false;
-                    setException(ex);
+                    setException(ex);// 设置到 futureTask的属性中, 而不是抛出异常
                 }
                 if (ran)
                     set(result);
